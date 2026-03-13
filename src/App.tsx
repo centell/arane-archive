@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import videosData from "./data/videos.json";
 import "./App.css";
 
@@ -56,44 +56,35 @@ function useCharacterEmote(status: DownloadStatus, progress: DownloadProgress | 
   const phaseRef = useRef<"idle" | "intro" | "progress" | "flash" | "done" | "error">("idle");
   const prevVideoIdRef = useRef<string | null>(null);
 
-  // idle 순환
   useEffect(() => {
     if (status !== "idle") return;
     phaseRef.current = "idle";
     let idx = 0;
     setEmote(IDLE_CYCLE[0]);
-
     const tick = setInterval(() => {
       if (phaseRef.current !== "idle") return;
       idx = (idx + 1) % IDLE_CYCLE.length;
       setEmote(IDLE_CYCLE[idx]);
     }, 3500);
-
     return () => clearInterval(tick);
   }, [status]);
 
-  // 다운로드 시작 → 문열어 2.5초 후 진행률 기반으로 전환
   useEffect(() => {
     if (status !== "downloading") return;
     phaseRef.current = "intro";
     prevVideoIdRef.current = null;
     setEmote("/emotes/araneA05_문열어_네아.gif");
-
     const t = setTimeout(() => {
       if (phaseRef.current === "intro") {
         phaseRef.current = "progress";
         setEmote(getProgressEmote(progress?.percent ?? 0));
       }
     }, 2500);
-
     return () => clearTimeout(t);
   }, [status]);
 
-  // 진행률 추적
   useEffect(() => {
     if (status !== "downloading" || !progress) return;
-
-    // 영상 하나 완료 → 박수 flash
     if (progress.status === "next" && progress.videoId !== prevVideoIdRef.current) {
       prevVideoIdRef.current = progress.videoId;
       phaseRef.current = "flash";
@@ -106,28 +97,23 @@ function useCharacterEmote(status: DownloadStatus, progress: DownloadProgress | 
       }, 1500);
       return;
     }
-
     if (phaseRef.current === "progress") {
       setEmote(getProgressEmote(progress.percent));
     }
   }, [progress, status]);
 
-  // 완료 순환
   useEffect(() => {
     if (status !== "completed") return;
     phaseRef.current = "done";
     let idx = 0;
     setEmote(DONE_CYCLE[0]);
-
     const t = setInterval(() => {
       idx = (idx + 1) % DONE_CYCLE.length;
       setEmote(DONE_CYCLE[idx]);
     }, 2000);
-
     return () => clearInterval(t);
   }, [status]);
 
-  // 에러
   useEffect(() => {
     if (status !== "error") return;
     phaseRef.current = "error";
@@ -146,9 +132,32 @@ function formatDuration(seconds: number | null): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+function formatHoursMinutes(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}시간 ${m}분`;
+  return `${m}분`;
+}
+
 function formatDate(d: string | null): string {
   if (!d || d.length !== 8) return "";
   return `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6, 8)}`;
+}
+
+function IconX() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.259 5.63 5.905-5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  );
+}
+
+function IconYouTube() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+    </svg>
+  );
 }
 
 export default function App() {
@@ -159,8 +168,30 @@ export default function App() {
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+  const [scanResult, setScanResult] = useState<{ added: number; removed: number } | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
 
   const emote = useCharacterEmote(status, progress);
+
+  // 폴더 변경 시 이미 받은 영상 감지
+  useEffect(() => {
+    if (!outputDir) return;
+    console.log("[scan] 폴더 스캔 시작:", outputDir);
+    invoke<string[]>("get_downloaded_ids", { outputDir })
+      .then((ids) => {
+        console.log("[scan] 감지된 영상 수:", ids.length, ids);
+        if (ids.length === 0) return;
+        const idSet = new Set(ids);
+        setDoneIds(idSet);
+        setSelected((prev) => {
+          const next = new Set(prev);
+          idSet.forEach((id) => next.delete(id));
+          return next;
+        });
+      })
+      .catch((e) => console.error("[scan] 실패:", e));
+  }, [outputDir]);
 
   useEffect(() => {
     const unlistenProgress = listen<DownloadProgress>("download-progress", (event) => {
@@ -174,23 +205,27 @@ export default function App() {
         setStatus("completed");
       }
     });
-
     const unlistenError = listen<string>("download-error", (event) => {
       setErrorMsg(event.payload);
       setStatus("error");
     });
-
+    const unlistenCancelled = listen("download-cancelled", () => {
+      setStatus("idle");
+      setProgress(null);
+    });
     return () => {
       unlistenProgress.then((f) => f());
       unlistenError.then((f) => f());
+      unlistenCancelled.then((f) => f());
     };
   }, []);
 
   function toggleAll() {
-    if (selected.size === VIDEOS.length) {
+    const undone = VIDEOS.filter((v) => !doneIds.has(v.id)).map((v) => v.id);
+    if (selected.size === undone.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(VIDEOS.map((v) => v.id)));
+      setSelected(new Set(undone));
     }
   }
 
@@ -207,7 +242,6 @@ export default function App() {
     setStatus("downloading");
     setProgress(null);
     setErrorMsg("");
-    setDoneIds(new Set());
     const videoIds = VIDEOS.filter((v) => selected.has(v.id)).map((v) => v.id);
     try {
       await invoke("download_videos", { videoIds, outputDir, quality });
@@ -217,11 +251,61 @@ export default function App() {
     }
   }
 
+  function handleCancel() {
+    console.log("[cancel] 버튼 클릭됨");
+    invoke("cancel_download")
+      .then(() => console.log("[cancel] 성공"))
+      .catch((e) => console.error("[cancel] 실패:", e));
+  }
+
+  async function handleOpenVideo(video: Video) {
+    if (!outputDir) return;
+    try {
+      const path = await invoke<string | null>("find_video_file", {
+        outputDir,
+        title: video.title,
+      });
+      if (path) {
+        openPath(path);
+      } else {
+        openPath(outputDir);
+      }
+    } catch (e) {
+      console.error("[open-video] 실패:", e);
+    }
+  }
+
+  async function handleScan() {
+    if (!outputDir) return;
+    setIsScanning(true);
+    setScanResult(null);
+    try {
+      const videoTitles = VIDEOS.map((v) => [v.id, v.title] as [string, string]);
+      const result = await invoke<{ added: number; removed: number }>("scan_and_update_archive", {
+        outputDir,
+        videoTitles,
+      });
+      setScanResult(result);
+      // archive 갱신 후 doneIds 다시 로드
+      const ids = await invoke<string[]>("get_downloaded_ids", { outputDir });
+      const idSet = new Set(ids);
+      setDoneIds(idSet);
+      setSelected((prev) => {
+        const next = new Set(prev);
+        idSet.forEach((id) => next.delete(id));
+        return next;
+      });
+    } catch (e) {
+      console.error("[scan] 실패:", e);
+    } finally {
+      setIsScanning(false);
+    }
+  }
+
   function handleReset() {
     setStatus("idle");
     setProgress(null);
     setErrorMsg("");
-    setDoneIds(new Set());
   }
 
   async function handleSelectFolder() {
@@ -233,9 +317,22 @@ export default function App() {
   }
 
   const isDownloading = status === "downloading";
-  const allSelected = selected.size === VIDEOS.length;
+  const filteredVideos = VIDEOS.filter((v) =>
+    v.title.toLowerCase().includes(search.toLowerCase())
+  );
+  const undoneIds = new Set(VIDEOS.filter((v) => !doneIds.has(v.id)).map((v) => v.id));
+  const allUndoneSelected = undoneIds.size > 0 && [...undoneIds].every((id) => selected.has(id));
   const canDownload = !isDownloading && outputDir.trim() !== "" && selected.size > 0;
   const currentVideo = progress ? VIDEOS.find((v) => v.id === progress.videoId) : null;
+
+  const overallPercent = progress
+    ? ((progress.current - 1 + progress.percent / 100) / progress.total) * 100
+    : 0;
+
+  const doneDuration = VIDEOS.filter((v) => doneIds.has(v.id)).reduce(
+    (sum, v) => sum + (v.duration ?? 0),
+    0
+  );
 
   return (
     <div className="app">
@@ -245,28 +342,53 @@ export default function App() {
             <img key={img.alt} src={img.src} alt={img.alt} className="title-sticker" />
           ))}
           <span className="title-sub">아카이브</span>
+          <div className="sns-links">
+            <button
+              className="sns-btn"
+              onClick={() => openUrl("https://x.com/Araneum16")}
+              title="아라네 X(트위터)"
+            >
+              <IconX />
+            </button>
+            <button
+              className="sns-btn"
+              onClick={() => openUrl("https://www.youtube.com/@araneum16")}
+              title="아라네 유튜브"
+            >
+              <IconYouTube />
+            </button>
+          </div>
         </div>
-        <p className="header-desc">🍒🖤 마녀님의 추억을 소중히 보관해요 · 영상 {VIDEOS.length}개</p>
+        <p className="header-desc">🍒🖤 마녀과님의 추억을 소중히 보관해요 · 영상 {VIDEOS.length}개</p>
       </header>
 
       <div className="layout">
+        {/* 왼쪽: 영상 목록 */}
         <div className="video-panel">
           <div className="video-panel-header">
             <span className="panel-title">영상 목록</span>
+            <input
+              className="search-input"
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="검색..."
+              disabled={isDownloading}
+            />
             <button className="select-all-btn" onClick={toggleAll} disabled={isDownloading}>
-              {allSelected ? "전체 해제" : "전체 선택"}
+              {allUndoneSelected ? "전체 해제" : "전체 선택"}
             </button>
             <span className="select-count">{selected.size}/{VIDEOS.length}</span>
           </div>
           <div className="video-list">
-            {VIDEOS.map((video) => {
+            {filteredVideos.map((video) => {
               const isDone = doneIds.has(video.id);
               const isCurrent = progress?.videoId === video.id && isDownloading;
               return (
                 <div
                   key={video.id}
                   className={`video-item ${selected.has(video.id) ? "selected" : ""} ${isDone ? "done" : ""} ${isCurrent ? "current" : ""}`}
-                  onClick={() => !isDownloading && toggleOne(video.id)}
+                  onClick={() => !isDownloading && !isDone && toggleOne(video.id)}
                 >
                   <div className="video-thumb-wrap">
                     {video.thumbnail && (
@@ -277,7 +399,15 @@ export default function App() {
                         <img src="/emotes/araneA03_응원2.gif" alt="" className="thumb-gif" />
                       </div>
                     )}
-                    {isDone && <div className="thumb-done">🖤</div>}
+                    {isDone && (
+                      <button
+                        className="thumb-done"
+                        onClick={(e) => { e.stopPropagation(); handleOpenVideo(video); }}
+                        title="영상 열기"
+                      >
+                        <img src="/emotes/arane07_팝콘.png" alt="재생" className="thumb-popcorn" />
+                      </button>
+                    )}
                   </div>
                   <div className="video-info">
                     <p className="video-title">{video.title}</p>
@@ -290,28 +420,26 @@ export default function App() {
                 </div>
               );
             })}
+            {filteredVideos.length === 0 && (
+              <div className="search-empty">
+                <img src="/emotes/araneA_question.png" alt="" style={{ width: 40, opacity: 0.4 }} />
+                <p>검색 결과가 없어요</p>
+              </div>
+            )}
           </div>
         </div>
 
+        {/* 오른쪽 */}
         <div className="side-panel">
           <div className="character-area">
-            <img
-              src={emote}
-              alt="status"
-              className="character-emote"
-              key={emote}
-            />
+            <img src={emote} alt="status" className="character-emote" key={emote} />
           </div>
 
           <div className="form">
             <div className="field">
               <label className="field-label">저장 경로</label>
               <div className="folder-row">
-                <button
-                  className="folder-btn"
-                  onClick={handleSelectFolder}
-                  disabled={isDownloading}
-                >
+                <button className="folder-btn" onClick={handleSelectFolder} disabled={isDownloading}>
                   {outputDir ? (
                     <span className="folder-path">{outputDir}</span>
                   ) : (
@@ -321,7 +449,7 @@ export default function App() {
                 {outputDir && (
                   <button
                     className="folder-open-btn"
-                    onClick={() => openPath(outputDir).then(() => console.log("열기 성공")).catch((e) => console.error("열기 실패:", e))}
+                    onClick={() => openPath(outputDir)}
                     title="폴더 열기"
                   >
                     ↗
@@ -329,6 +457,24 @@ export default function App() {
                 )}
               </div>
             </div>
+
+            {outputDir && !isDownloading && (
+              <button
+                className="scan-btn"
+                onClick={handleScan}
+                disabled={isScanning}
+              >
+                {isScanning ? "확인 중..." : "✓ 받은 영상 확인"}
+              </button>
+            )}
+
+            {scanResult && (
+              <p className="scan-result">
+                {scanResult.added === 0 && scanResult.removed === 0
+                  ? "변경사항 없음"
+                  : `+${scanResult.added}개 추가 · -${scanResult.removed}개 제거`}
+              </p>
+            )}
 
             <div className="field">
               <label className="field-label">화질</label>
@@ -345,27 +491,30 @@ export default function App() {
               </select>
             </div>
 
-            <button className="download-btn" onClick={handleDownload} disabled={!canDownload}>
-              {isDownloading ? (
-                <>
-                  <img src="/emotes/araneA03_응원2.gif" alt="" className="btn-emote" />
-                  다운로드 중...
-                </>
-              ) : (
-                <>🍒 {selected.size}개 다운로드</>
-              )}
-            </button>
+            {isDownloading ? (
+              <button className="cancel-btn" onClick={handleCancel}>
+                ✕ 취소
+              </button>
+            ) : (
+              <button className="download-btn" onClick={handleDownload} disabled={!canDownload}>
+                🍒 {selected.size}개 다운로드
+              </button>
+            )}
           </div>
 
           {isDownloading && progress && (
             <div className="progress-area">
-              <div className="progress-queue">
-                {progress.current} / {progress.total}
+              <div className="overall-progress">
+                <span className="overall-label">전체 진행률</span>
+                <span className="overall-count">{progress.current} / {progress.total}</span>
+              </div>
+              <div className="progress-bar-wrap">
+                <div className="progress-bar overall" style={{ width: `${overallPercent}%` }} />
               </div>
               {currentVideo && (
                 <p className="progress-video-title">{currentVideo.title}</p>
               )}
-              <div className="progress-bar-wrap">
+              <div className="progress-bar-wrap thin">
                 <div className="progress-bar" style={{ width: `${progress.percent}%` }} />
               </div>
               <div className="progress-stats">
@@ -380,7 +529,10 @@ export default function App() {
             <div className="status-msg success">
               <img src="/emotes/araneA04_웃음.gif" alt="" className="status-emote" />
               <div>
-                <p>🖤 모두 완료!</p>
+                <p>🖤 백업 완료!</p>
+                {doneDuration > 0 && (
+                  <p className="stats-text">{formatHoursMinutes(doneDuration)} 분량</p>
+                )}
                 <button className="reset-btn" onClick={handleReset}>처음으로</button>
               </div>
             </div>

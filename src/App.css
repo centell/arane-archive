@@ -56,6 +56,32 @@ body {
   filter: drop-shadow(0 2px 6px rgba(196, 30, 58, 0.5));
 }
 
+.sns-links {
+  display: flex;
+  gap: 4px;
+  margin-left: 10px;
+}
+
+.sns-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+  padding: 0;
+}
+
+.sns-btn:hover {
+  border-color: var(--red);
+  color: var(--text);
+}
+
 .title-sub {
   font-size: 20px;
   font-weight: 700;
@@ -106,6 +132,36 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.8px;
   flex: 1;
+}
+
+.search-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--text);
+  font-size: 11px;
+  font-family: inherit;
+  outline: none;
+  width: 100px;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: var(--border-focus);
+}
+
+.search-input::placeholder { color: #333; }
+
+.search-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .select-all-btn {
@@ -216,8 +272,22 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0.5);
-  font-size: 16px;
+  background: rgba(0,0,0,0.55);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.thumb-done:hover {
+  background: rgba(0,0,0,0.3);
+}
+
+.thumb-popcorn {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 4px rgba(0,0,0,0.6));
 }
 
 .video-info {
@@ -399,6 +469,59 @@ body {
   color: var(--text);
 }
 
+/* ── Scan Button ── */
+.scan-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 7px 10px;
+  width: 100%;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.scan-btn:hover:not(:disabled) {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+
+.scan-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.scan-result {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ── Cancel Button ── */
+.cancel-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+  padding: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1px solid #3a1520;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.cancel-btn:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
 /* ── Download Button ── */
 .download-btn {
   display: flex;
@@ -447,11 +570,29 @@ body {
   gap: 8px;
 }
 
-.progress-queue {
+.overall-progress {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.overall-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.overall-count {
   font-size: 11px;
   font-weight: 700;
   color: var(--red);
-  text-align: right;
+}
+
+.progress-bar-wrap.thin {
+  height: 3px;
+  margin-top: 2px;
 }
 
 .progress-video-title {
@@ -505,6 +646,12 @@ body {
   height: 48px;
   object-fit: contain;
   flex-shrink: 0;
+}
+
+.stats-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px !important;
 }
 
 .status-msg p {

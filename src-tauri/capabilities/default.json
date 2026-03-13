@@ -12,6 +12,10 @@
     },
     "shell:allow-execute",
     "shell:allow-kill",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://**" }]
+    }
   ]
 }
