@@ -167,11 +167,8 @@ async fn download_videos(
                         .ok();
                     }
                 }
-                CommandEvent::Stderr(bytes) => {
-                    let line = String::from_utf8_lossy(&bytes);
-                    if !cancel.load(Ordering::Relaxed) {
-                        app.emit("download-error", line.trim()).ok();
-                    }
+                CommandEvent::Stderr(_) => {
+                    // yt-dlp은 정상 동작 중에도 stderr에 정보를 출력하므로 무시
                 }
                 CommandEvent::Terminated(status) => {
                     if cancel.load(Ordering::Relaxed) {
