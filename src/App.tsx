@@ -164,6 +164,7 @@ export default function App() {
   const [selected, setSelected] = useState<Set<string>>(new Set(VIDEOS.map((v) => v.id)));
   const [outputDir, setOutputDir] = useState(() => localStorage.getItem("outputDir") ?? "");
   const [quality, setQuality] = useState("best");
+  const [browser, setBrowser] = useState(() => localStorage.getItem("browser") ?? "safari");
   const [status, setStatus] = useState<DownloadStatus>("idle");
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -171,6 +172,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [scanResult, setScanResult] = useState<{ added: number; removed: number } | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   const emote = useCharacterEmote(status, progress);
 
@@ -212,6 +214,7 @@ export default function App() {
     const unlistenCancelled = listen("download-cancelled", () => {
       setStatus("idle");
       setProgress(null);
+      setIsCancelling(false);
     });
     return () => {
       unlistenProgress.then((f) => f());
@@ -244,7 +247,7 @@ export default function App() {
     setErrorMsg("");
     const videoIds = VIDEOS.filter((v) => selected.has(v.id)).map((v) => v.id);
     try {
-      await invoke("download_videos", { videoIds, outputDir, quality });
+      await invoke("download_videos", { videoIds, outputDir, quality, browser });
     } catch (e) {
       setErrorMsg(String(e));
       setStatus("error");
@@ -252,10 +255,8 @@ export default function App() {
   }
 
   function handleCancel() {
-    console.log("[cancel] 버튼 클릭됨");
-    invoke("cancel_download")
-      .then(() => console.log("[cancel] 성공"))
-      .catch((e) => console.error("[cancel] 실패:", e));
+    setIsCancelling(true);
+    invoke("cancel_download").catch((e) => console.error("[cancel] 실패:", e));
   }
 
   async function handleOpenVideo(video: Video) {
@@ -306,6 +307,7 @@ export default function App() {
     setStatus("idle");
     setProgress(null);
     setErrorMsg("");
+    setIsCancelling(false);
   }
 
   async function handleSelectFolder() {
@@ -477,6 +479,24 @@ export default function App() {
             )}
 
             <div className="field">
+              <label className="field-label">브라우저 (쿠키 인증)</label>
+              <select
+                className="field-select"
+                value={browser}
+                onChange={(e) => { setBrowser(e.target.value); localStorage.setItem("browser", e.target.value); }}
+                disabled={isDownloading}
+              >
+                <option value="safari">Safari</option>
+                <option value="chrome">Chrome</option>
+                <option value="firefox">Firefox</option>
+                <option value="brave">Brave</option>
+                <option value="edge">Edge</option>
+                <option value="arc">Arc</option>
+              </select>
+              <p className="field-hint">선택한 브라우저에서 YouTube에 로그인 후 새로고침 하세요</p>
+            </div>
+
+            <div className="field">
               <label className="field-label">화질</label>
               <select
                 className="field-select"
@@ -492,8 +512,12 @@ export default function App() {
             </div>
 
             {isDownloading ? (
-              <button className="cancel-btn" onClick={handleCancel}>
-                ✕ 취소
+              <button
+                className={`cancel-btn ${isCancelling ? "cancelling" : ""}`}
+                onClick={handleCancel}
+                disabled={isCancelling}
+              >
+                {isCancelling ? "취소 중..." : "✕ 취소"}
               </button>
             ) : (
               <button className="download-btn" onClick={handleDownload} disabled={!canDownload}>

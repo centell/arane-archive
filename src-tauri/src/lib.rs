@@ -71,10 +71,15 @@ fn quality_to_format(quality: &str) -> &str {
 
 #[tauri::command]
 fn cancel_download(state: tauri::State<'_, DownloadState>) {
+    println!("[cancel] cancel_download 호출됨");
     state.cancel.store(true, Ordering::Relaxed);
     if let Ok(mut child) = state.current_child.lock() {
         if let Some(c) = child.take() {
-            let _ = c.kill();
+            println!("[cancel] 프로세스 kill 시도");
+            let result = c.kill();
+            println!("[cancel] kill 결과: {:?}", result);
+        } else {
+            println!("[cancel] current_child가 None — kill 불가");
         }
     }
 }
@@ -107,6 +112,7 @@ async fn download_videos(
     video_ids: Vec<String>,
     output_dir: String,
     quality: String,
+    browser: String,
 ) -> Result<(), String> {
     let state = app.state::<DownloadState>();
     state.cancel.store(false, Ordering::Relaxed);
@@ -137,6 +143,8 @@ async fn download_videos(
                 "--no-playlist",
                 "--download-archive",
                 &archive_path,
+                "--cookies-from-browser",
+                &browser,
                 &url,
             ])
             .spawn()
@@ -167,8 +175,9 @@ async fn download_videos(
                         .ok();
                     }
                 }
-                CommandEvent::Stderr(_) => {
-                    // yt-dlp은 정상 동작 중에도 stderr에 정보를 출력하므로 무시
+                CommandEvent::Stderr(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes);
+                    eprintln!("[yt-dlp stderr] {}", line.trim());
                 }
                 CommandEvent::Terminated(status) => {
                     if cancel.load(Ordering::Relaxed) {
