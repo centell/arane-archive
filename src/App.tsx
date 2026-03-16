@@ -534,7 +534,11 @@ export default function App() {
                 <option value="edge">Edge</option>
                 <option value="arc">Arc</option>
               </select>
-              <p className="field-hint">선택한 브라우저에서 YouTube에 로그인 후 새로고침 하세요</p>
+              <p className="field-hint">
+                {navigator.userAgent.includes("Windows")
+                  ? "브라우저를 완전히 닫은 후 다운로드하세요 (쿠키 DB 잠금 해제)"
+                  : "선택한 브라우저에서 YouTube에 로그인 후 새로고침 하세요"}
+              </p>
             </div>
 
             <div className="field">
