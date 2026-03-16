@@ -75,20 +75,22 @@ fn cancel_download(state: tauri::State<'_, DownloadState>) {
     println!("[cancel] cancel_download 호출됨");
     state.cancel.store(true, Ordering::SeqCst);
     if let Ok(mut child) = state.current_child.lock() {
+        // PID를 먼저 가져온 뒤 (child가 살아있는 상태에서)
+        // 자식 프로세스(PyInstaller Python worker) → 부모(부트로더) 순서로 종료
+        if let Some(ref c) = *child {
+            let pid = c.pid();
+            println!("[cancel] PID: {}, 자식 프로세스 kill", pid);
+            // 자식 프로세스 먼저 종료
+            let _ = std::process::Command::new("pkill")
+                .args(["-9", "-P", &pid.to_string()])
+                .output();
+        }
         if let Some(c) = child.take() {
-            println!("[cancel] 프로세스 kill 시도");
-            let result = c.kill();
-            println!("[cancel] kill 결과: {:?}", result);
-        } else {
-            println!("[cancel] current_child가 None — kill 불가");
+            println!("[cancel] 부트로더 kill");
+            let _ = c.kill();
         }
     }
-    // PyInstaller 기반 yt-dlp는 부트로더 + Python 자식 프로세스 구조이므로
-    // 부모 kill 만으로는 자식이 살아남을 수 있음 — pkill로 전부 종료
-    let _ = std::process::Command::new("pkill")
-        .args(["-9", "-f", "yt-dlp-aarch64-apple-darwin"])
-        .output();
-    println!("[cancel] pkill 완료");
+    println!("[cancel] 완료");
 }
 
 #[tauri::command]
