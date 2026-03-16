@@ -50,6 +50,7 @@ jobs:
       - name: Download yt-dlp sidecar (macOS)
         if: runner.os == 'macOS'
         run: |
+          mkdir -p src-tauri/binaries
           curl -L "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${{ matrix.yt-dlp-asset }}" \
             -o "src-tauri/binaries/${{ matrix.sidecar-name }}"
           chmod +x "src-tauri/binaries/${{ matrix.sidecar-name }}"
@@ -58,6 +59,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path "src-tauri/binaries" | Out-Null
           Invoke-WebRequest `
             -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${{ matrix.yt-dlp-asset }}" `
             -OutFile "src-tauri/binaries/${{ matrix.sidecar-name }}"
