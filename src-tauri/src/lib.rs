@@ -170,7 +170,7 @@ async fn download_videos(
                 "--cookies-from-browser",
                 &browser,
                 "--extractor-args",
-                "youtube:player_client=tv_embedded",
+                "youtube:player_client=ios",
                 &url,
             ])
             .spawn()
