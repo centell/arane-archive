@@ -242,7 +242,9 @@ async fn download_videos(
 fn sidecar_path() -> PathBuf {
     let exe = std::env::current_exe().expect("exe path");
     let dir = exe.parent().expect("exe dir");
-    dir.join("yt-dlp-aarch64-apple-darwin")
+    let path = dir.join("yt-dlp-aarch64-apple-darwin");
+    println!("[sidecar] 경로: {:?} (존재: {})", path, path.exists());
+    path
 }
 
 #[derive(Serialize)]
@@ -254,35 +256,60 @@ struct UpdateInfo {
 }
 
 #[tauri::command]
-fn get_yt_dlp_version() -> String {
-    let path = sidecar_path();
-    std::process::Command::new(&path)
-        .arg("--version")
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string())
+async fn get_yt_dlp_version(app: tauri::AppHandle) -> String {
+    let cmd = match app.shell().sidecar("yt-dlp") {
+        Ok(c) => c,
+        Err(e) => { eprintln!("[version] sidecar 오류: {}", e); return "unknown".to_string(); }
+    };
+    let (mut rx, _child) = match cmd.arg("--version").spawn() {
+        Ok(r) => r,
+        Err(e) => { eprintln!("[version] spawn 오류: {}", e); return "unknown".to_string(); }
+    };
+    while let Some(event) = rx.recv().await {
+        match event {
+            CommandEvent::Stdout(bytes) => {
+                let s = String::from_utf8_lossy(&bytes).trim().to_string();
+                if !s.is_empty() { return s; }
+            }
+            CommandEvent::Terminated(_) => break,
+            _ => {}
+        }
+    }
+    "unknown".to_string()
 }
 
+// 현재 버전은 프론트엔드에서 넘겨받음 — yt-dlp를 두 번 실행할 필요 없음
 #[tauri::command]
-async fn check_yt_dlp_update() -> Result<UpdateInfo, String> {
-    let current = get_yt_dlp_version();
+async fn check_yt_dlp_update(current: String) -> Result<UpdateInfo, String> {
+    println!("[update] 현재 버전: {}", current);
 
-    let output = std::process::Command::new("curl")
-        .args([
-            "-s",
-            "-H", "Accept: application/vnd.github+json",
-            "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest",
-        ])
-        .output()
-        .map_err(|e| e.to_string())?;
+    // std::process::Command는 blocking이므로 spawn_blocking으로 감쌈
+    let output = tauri::async_runtime::spawn_blocking(|| {
+        std::process::Command::new("curl")
+            .args([
+                "--max-time", "10",
+                "-s",
+                "-H", "Accept: application/vnd.github+json",
+                "-H", "User-Agent: arane-archive",
+                "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest",
+            ])
+            .output()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+
+    println!("[update] GitHub 응답: {} bytes", output.stdout.len());
 
     let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
+        serde_json::from_slice(&output.stdout).map_err(|e| format!("JSON 파싱 실패: {}", e))?;
 
     let latest = json["tag_name"]
         .as_str()
         .unwrap_or("unknown")
         .to_string();
+
+    println!("[update] 최신 버전: {}", latest);
 
     let has_update = latest != "unknown" && latest != current;
     Ok(UpdateInfo { current, latest, has_update })
@@ -297,23 +324,33 @@ async fn update_yt_dlp(app: tauri::AppHandle, latest_version: String) -> Result<
     let dest = sidecar_path();
     let tmp = dest.with_extension("tmp");
 
-    // 다운로드
-    let status = std::process::Command::new("curl")
-        .args(["-L", "-f", &url, "-o", tmp.to_str().unwrap()])
-        .status()
-        .map_err(|e| e.to_string())?;
+    // 다운로드 (blocking → spawn_blocking)
+    let url_clone = url.clone();
+    let tmp_clone = tmp.clone();
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        std::process::Command::new("curl")
+            .args(["-L", "-f", &url_clone, "-o", tmp_clone.to_str().unwrap()])
+            .status()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
 
     if !status.success() {
         return Err("다운로드 실패".to_string());
     }
 
-    // 실행 권한 부여
-    std::process::Command::new("chmod")
-        .args(["+x", tmp.to_str().unwrap()])
-        .status()
-        .map_err(|e| e.to_string())?;
+    // 실행 권한 부여 및 교체
+    let tmp_clone2 = tmp.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        std::process::Command::new("chmod")
+            .args(["+x", tmp_clone2.to_str().unwrap()])
+            .status()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
 
-    // 교체
     std::fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
 
     app.emit("yt-dlp-updated", latest_version).ok();

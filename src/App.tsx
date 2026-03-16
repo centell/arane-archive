@@ -272,7 +272,7 @@ export default function App() {
     setIsCheckingUpdate(true);
     setUpdateDone(false);
     try {
-      const info = await invoke<{ current: string; latest: string; hasUpdate: boolean }>("check_yt_dlp_update");
+      const info = await invoke<{ current: string; latest: string; hasUpdate: boolean }>("check_yt_dlp_update", { current: ytdlpVersion });
       setUpdateInfo(info);
     } catch (e) {
       console.error("[update] 확인 실패:", e);
