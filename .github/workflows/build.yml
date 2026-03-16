@@ -14,14 +14,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            target: aarch64-apple-darwin
-            yt-dlp-asset: yt-dlp_macos
-            sidecar-name: yt-dlp-aarch64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             yt-dlp-asset: yt-dlp.exe
             sidecar-name: yt-dlp-x86_64-pc-windows-msvc.exe
+          - os: macos-14
+            target: aarch64-apple-darwin
+            yt-dlp-asset: yt-dlp_macos
+            sidecar-name: yt-dlp-aarch64-apple-darwin
 
     runs-on: ${{ matrix.os }}
 
@@ -72,9 +72,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "arane-archive ${{ github.ref_name }}"
           releaseBody: |
-            ## 아라네 아카이버 ${{ github.ref_name }}
+            ## 아라네 아카이브 ${{ github.ref_name }}
 
-            아라네의 소중한 영상들을 보관해 드립니다 🌸
+            아라네의 소중한 영상들을 보관해 드립니다 🍒
 
             ### 다운로드
             - **macOS (Apple Silicon)**: `arane-archive_x.x.x_aarch64.dmg`
