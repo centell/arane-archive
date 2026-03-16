@@ -164,7 +164,11 @@ export default function App() {
   const [selected, setSelected] = useState<Set<string>>(new Set(VIDEOS.map((v) => v.id)));
   const [outputDir, setOutputDir] = useState(() => localStorage.getItem("outputDir") ?? "");
   const [quality, setQuality] = useState("best");
-  const [browser, setBrowser] = useState(() => localStorage.getItem("browser") ?? "safari");
+  const [browser, setBrowser] = useState(() => {
+    const saved = localStorage.getItem("browser");
+    if (saved) return saved;
+    return navigator.userAgent.includes("Windows") ? "edge" : "safari";
+  });
   const [status, setStatus] = useState<DownloadStatus>("idle");
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
