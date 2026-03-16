@@ -100,7 +100,10 @@ fn cancel_download(state: tauri::State<'_, DownloadState>) {
 
 #[tauri::command]
 fn get_downloaded_ids(output_dir: String) -> Vec<String> {
-    let archive_path = format!("{}/arane-archive.txt", output_dir);
+    let archive_path = std::path::Path::new(&output_dir)
+        .join("arane-archive.txt")
+        .to_string_lossy()
+        .to_string();
     let content = match std::fs::read_to_string(&archive_path) {
         Ok(c) => c,
         Err(_) => return vec![],
@@ -134,7 +137,14 @@ async fn download_videos(
 
     let format = quality_to_format(&quality);
     let total = video_ids.len();
-    let archive_path = format!("{}/arane-archive.txt", output_dir);
+    let archive_path = std::path::Path::new(&output_dir)
+        .join("arane-archive.txt")
+        .to_string_lossy()
+        .to_string();
+    let output_format = std::path::Path::new(&output_dir)
+        .join("%(title)s.%(ext)s")
+        .to_string_lossy()
+        .to_string();
 
     for (i, video_id) in video_ids.iter().enumerate() {
         if cancel.load(Ordering::SeqCst) {
@@ -152,7 +162,7 @@ async fn download_videos(
                 "-f",
                 format,
                 "-o",
-                &format!("{}/%(title)s.%(ext)s", output_dir),
+                &output_format,
                 "--newline",
                 "--no-playlist",
                 "--download-archive",
@@ -168,6 +178,8 @@ async fn download_videos(
             let mut c = state.current_child.lock().unwrap();
             *c = Some(child);
         }
+
+        let mut stderr_lines: Vec<String> = Vec::new();
 
         while let Some(event) = rx.recv().await {
             match event {
@@ -190,8 +202,11 @@ async fn download_videos(
                     }
                 }
                 CommandEvent::Stderr(bytes) => {
-                    let line = String::from_utf8_lossy(&bytes);
-                    eprintln!("[yt-dlp stderr] {}", line.trim());
+                    let line = String::from_utf8_lossy(&bytes).trim().to_string();
+                    eprintln!("[yt-dlp stderr] {}", line);
+                    if !line.is_empty() {
+                        stderr_lines.push(line);
+                    }
                 }
                 CommandEvent::Terminated(status) => {
                     if cancel.load(Ordering::SeqCst) {
@@ -217,11 +232,18 @@ async fn download_videos(
                         )
                         .ok();
                     } else {
-                        app.emit(
-                            "download-error",
-                            format!("{}번 영상 다운로드 실패", current),
-                        )
-                        .ok();
+                        // ERROR: 로 시작하는 줄 우선, 없으면 마지막 줄
+                        let detail = stderr_lines.iter().rev()
+                            .find(|l| l.starts_with("ERROR:"))
+                            .or_else(|| stderr_lines.last())
+                            .cloned()
+                            .unwrap_or_default();
+                        let msg = if detail.is_empty() {
+                            format!("{}번 영상 다운로드 실패", current)
+                        } else {
+                            format!("{}번 영상 다운로드 실패\n{}", current, detail)
+                        };
+                        app.emit("download-error", msg).ok();
                     }
                 }
                 _ => {}
@@ -405,7 +427,8 @@ fn find_video_file(output_dir: String, title: String) -> Option<String> {
             let stem = name.rsplitn(2, '.').last().unwrap_or(&name).to_string();
             let norm_stem = normalize(&stem);
             if norm_stem.contains(&norm_title) || norm_title.contains(&norm_stem) {
-                return Some(format!("{}/{}", output_dir, name));
+                let path = std::path::Path::new(&output_dir).join(&name);
+                return Some(path.to_string_lossy().to_string());
             }
         }
     }
@@ -420,7 +443,10 @@ fn scan_and_update_archive(
     output_dir: String,
     video_titles: Vec<(String, String)>, // (id, title)
 ) -> Result<ScanResult, String> {
-    let archive_path = format!("{}/arane-archive.txt", output_dir);
+    let archive_path = std::path::Path::new(&output_dir)
+        .join("arane-archive.txt")
+        .to_string_lossy()
+        .to_string();
 
     // 저장 폴더의 영상 파일 목록 수집
     let entries = std::fs::read_dir(&output_dir).map_err(|e| e.to_string())?;

@@ -622,7 +622,9 @@ export default function App() {
             <div className="status-msg error">
               <img src="/emotes/arane02_슬픔.png" alt="" className="status-emote" />
               <div>
-                <p>{errorMsg || "오류가 발생했습니다."}</p>
+                {(errorMsg || "오류가 발생했습니다.").split("\n").map((line, i) => (
+                  <p key={i} className={i > 0 ? "error-detail" : ""}>{line}</p>
+                ))}
                 <button className="reset-btn" onClick={handleReset}>다시 시도</button>
               </div>
             </div>
