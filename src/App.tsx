@@ -28,6 +28,19 @@ interface DownloadProgress {
 
 const VIDEOS: Video[] = videosData as Video[];
 
+const IS_WINDOWS = navigator.userAgent.includes("Windows");
+const BROWSER_OPTIONS = IS_WINDOWS
+  ? [
+      { value: "edge", label: "Edge" },
+      { value: "chrome", label: "Chrome" },
+      { value: "firefox", label: "Firefox" },
+    ]
+  : [
+      { value: "safari", label: "Safari" },
+      { value: "chrome", label: "Chrome" },
+      { value: "firefox", label: "Firefox" },
+    ];
+
 const TITLE_IMAGES = [
   { src: "/emotes/arane11_아.png", alt: "아" },
   { src: "/emotes/arane12_라.png", alt: "라" },
@@ -167,7 +180,7 @@ export default function App() {
   const [browser, setBrowser] = useState(() => {
     const saved = localStorage.getItem("browser");
     if (saved) return saved;
-    return navigator.userAgent.includes("Windows") ? "edge" : "safari";
+    return IS_WINDOWS ? "edge" : "safari";
   });
   const [status, setStatus] = useState<DownloadStatus>("idle");
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
@@ -527,16 +540,13 @@ export default function App() {
                 onChange={(e) => { setBrowser(e.target.value); localStorage.setItem("browser", e.target.value); }}
                 disabled={isDownloading}
               >
-                <option value="safari">Safari</option>
-                <option value="chrome">Chrome</option>
-                <option value="firefox">Firefox</option>
-                <option value="brave">Brave</option>
-                <option value="edge">Edge</option>
-                <option value="arc">Arc</option>
+                {BROWSER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
               <p className="field-hint">
-                {navigator.userAgent.includes("Windows")
-                  ? "브라우저를 완전히 닫은 후 다운로드하세요 (쿠키 DB 잠금 해제)"
+                {IS_WINDOWS
+                  ? "브라우저를 완전히 닫은 후 다운로드하세요"
                   : "선택한 브라우저에서 YouTube에 로그인 후 새로고침 하세요"}
               </p>
             </div>

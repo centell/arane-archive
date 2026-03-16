@@ -169,6 +169,8 @@ async fn download_videos(
                 &archive_path,
                 "--cookies-from-browser",
                 &browser,
+                "--extractor-args",
+                "youtube:player_client=tv_embedded",
                 &url,
             ])
             .spawn()
