@@ -173,8 +173,17 @@ export default function App() {
   const [scanResult, setScanResult] = useState<{ added: number; removed: number } | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [ytdlpVersion, setYtdlpVersion] = useState("");
+  const [updateInfo, setUpdateInfo] = useState<{ current: string; latest: string; hasUpdate: boolean } | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateDone, setUpdateDone] = useState(false);
 
   const emote = useCharacterEmote(status, progress);
+
+  useEffect(() => {
+    invoke<string>("get_yt_dlp_version").then(setYtdlpVersion);
+  }, []);
 
   // 폴더 변경 시 이미 받은 영상 감지
   useEffect(() => {
@@ -257,6 +266,34 @@ export default function App() {
   function handleCancel() {
     setIsCancelling(true);
     invoke("cancel_download").catch((e) => console.error("[cancel] 실패:", e));
+  }
+
+  async function handleCheckUpdate() {
+    setIsCheckingUpdate(true);
+    setUpdateDone(false);
+    try {
+      const info = await invoke<{ current: string; latest: string; hasUpdate: boolean }>("check_yt_dlp_update");
+      setUpdateInfo(info);
+    } catch (e) {
+      console.error("[update] 확인 실패:", e);
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  }
+
+  async function handleUpdate() {
+    if (!updateInfo) return;
+    setIsUpdating(true);
+    try {
+      await invoke("update_yt_dlp", { latestVersion: updateInfo.latest });
+      setYtdlpVersion(updateInfo.latest);
+      setUpdateInfo(null);
+      setUpdateDone(true);
+    } catch (e) {
+      console.error("[update] 업데이트 실패:", e);
+    } finally {
+      setIsUpdating(false);
+    }
   }
 
   async function handleOpenVideo(video: Video) {
@@ -509,6 +546,21 @@ export default function App() {
                 <option value="720p">720p</option>
                 <option value="480p">480p</option>
               </select>
+            </div>
+
+            <div className="ytdlp-update-row">
+              <span className="ytdlp-version">yt-dlp {ytdlpVersion || "..."}</span>
+              {updateDone ? (
+                <span className="update-done">✓ 최신 버전</span>
+              ) : updateInfo?.hasUpdate ? (
+                <button className="update-btn" onClick={handleUpdate} disabled={isUpdating}>
+                  {isUpdating ? "업데이트 중..." : `→ ${updateInfo.latest}`}
+                </button>
+              ) : (
+                <button className="update-check-btn" onClick={handleCheckUpdate} disabled={isCheckingUpdate || isDownloading}>
+                  {isCheckingUpdate ? "확인 중..." : "업데이트 확인"}
+                </button>
+              )}
             </div>
 
             {isDownloading ? (

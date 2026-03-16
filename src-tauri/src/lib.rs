@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
@@ -72,7 +73,7 @@ fn quality_to_format(quality: &str) -> &str {
 #[tauri::command]
 fn cancel_download(state: tauri::State<'_, DownloadState>) {
     println!("[cancel] cancel_download 호출됨");
-    state.cancel.store(true, Ordering::Relaxed);
+    state.cancel.store(true, Ordering::SeqCst);
     if let Ok(mut child) = state.current_child.lock() {
         if let Some(c) = child.take() {
             println!("[cancel] 프로세스 kill 시도");
@@ -82,6 +83,12 @@ fn cancel_download(state: tauri::State<'_, DownloadState>) {
             println!("[cancel] current_child가 None — kill 불가");
         }
     }
+    // PyInstaller 기반 yt-dlp는 부트로더 + Python 자식 프로세스 구조이므로
+    // 부모 kill 만으로는 자식이 살아남을 수 있음 — pkill로 전부 종료
+    let _ = std::process::Command::new("pkill")
+        .args(["-9", "-f", "yt-dlp-aarch64-apple-darwin"])
+        .output();
+    println!("[cancel] pkill 완료");
 }
 
 #[tauri::command]
@@ -115,7 +122,7 @@ async fn download_videos(
     browser: String,
 ) -> Result<(), String> {
     let state = app.state::<DownloadState>();
-    state.cancel.store(false, Ordering::Relaxed);
+    state.cancel.store(false, Ordering::SeqCst);
     let cancel = state.cancel.clone();
 
     let format = quality_to_format(&quality);
@@ -123,7 +130,7 @@ async fn download_videos(
     let archive_path = format!("{}/arane-archive.txt", output_dir);
 
     for (i, video_id) in video_ids.iter().enumerate() {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.load(Ordering::SeqCst) {
             break;
         }
 
@@ -180,7 +187,7 @@ async fn download_videos(
                     eprintln!("[yt-dlp stderr] {}", line.trim());
                 }
                 CommandEvent::Terminated(status) => {
-                    if cancel.load(Ordering::Relaxed) {
+                    if cancel.load(Ordering::SeqCst) {
                         break;
                     }
                     if status.code == Some(0) {
@@ -219,7 +226,7 @@ async fn download_videos(
             *c = None;
         }
 
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.load(Ordering::SeqCst) {
             app.emit("download-cancelled", ()).ok();
             break;
         }
@@ -227,6 +234,91 @@ async fn download_videos(
 
     Ok(())
 }
+
+// ── yt-dlp 업데이트 ───────────────────────────────────────────────
+
+fn sidecar_path() -> PathBuf {
+    let exe = std::env::current_exe().expect("exe path");
+    let dir = exe.parent().expect("exe dir");
+    dir.join("yt-dlp-aarch64-apple-darwin")
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInfo {
+    current: String,
+    latest: String,
+    has_update: bool,
+}
+
+#[tauri::command]
+fn get_yt_dlp_version() -> String {
+    let path = sidecar_path();
+    std::process::Command::new(&path)
+        .arg("--version")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "unknown".to_string())
+}
+
+#[tauri::command]
+async fn check_yt_dlp_update() -> Result<UpdateInfo, String> {
+    let current = get_yt_dlp_version();
+
+    let output = std::process::Command::new("curl")
+        .args([
+            "-s",
+            "-H", "Accept: application/vnd.github+json",
+            "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
+
+    let latest = json["tag_name"]
+        .as_str()
+        .unwrap_or("unknown")
+        .to_string();
+
+    let has_update = latest != "unknown" && latest != current;
+    Ok(UpdateInfo { current, latest, has_update })
+}
+
+#[tauri::command]
+async fn update_yt_dlp(app: tauri::AppHandle, latest_version: String) -> Result<(), String> {
+    let url = format!(
+        "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_macos",
+        latest_version
+    );
+    let dest = sidecar_path();
+    let tmp = dest.with_extension("tmp");
+
+    // 다운로드
+    let status = std::process::Command::new("curl")
+        .args(["-L", "-f", &url, "-o", tmp.to_str().unwrap()])
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    if !status.success() {
+        return Err("다운로드 실패".to_string());
+    }
+
+    // 실행 권한 부여
+    std::process::Command::new("chmod")
+        .args(["+x", tmp.to_str().unwrap()])
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    // 교체
+    std::fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
+
+    app.emit("yt-dlp-updated", latest_version).ok();
+    Ok(())
+}
+
+// ── 파일명 정규화 ─────────────────────────────────────────────────
 
 /// 파일명을 정규화: 소문자 변환 + 영숫자/한글 외 문자 제거
 fn normalize(s: &str) -> String {
@@ -349,6 +441,9 @@ pub fn run() {
             get_downloaded_ids,
             scan_and_update_archive,
             find_video_file,
+            get_yt_dlp_version,
+            check_yt_dlp_update,
+            update_yt_dlp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

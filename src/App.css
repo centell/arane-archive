@@ -476,6 +476,60 @@ body {
   color: var(--text);
 }
 
+/* ── yt-dlp Update ── */
+.ytdlp-update-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ytdlp-version {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: monospace;
+}
+
+.update-check-btn,
+.update-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-family: inherit;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+
+.update-check-btn:hover:not(:disabled) {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+
+.update-btn {
+  border-color: var(--red-dark);
+  color: var(--red);
+}
+
+.update-btn:hover:not(:disabled) {
+  border-color: var(--red);
+  background: rgba(196, 30, 58, 0.1);
+}
+
+.update-check-btn:disabled,
+.update-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.update-done {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
 /* ── Scan Button ── */
 .scan-btn {
   background: transparent;
