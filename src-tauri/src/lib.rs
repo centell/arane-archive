@@ -81,8 +81,13 @@ fn cancel_download(state: tauri::State<'_, DownloadState>) {
             let pid = c.pid();
             println!("[cancel] PID: {}, 자식 프로세스 kill", pid);
             // 자식 프로세스 먼저 종료
+            #[cfg(not(target_os = "windows"))]
             let _ = std::process::Command::new("pkill")
                 .args(["-9", "-P", &pid.to_string()])
+                .output();
+            #[cfg(target_os = "windows")]
+            let _ = std::process::Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
                 .output();
         }
         if let Some(c) = child.take() {
@@ -242,7 +247,13 @@ async fn download_videos(
 fn sidecar_path() -> PathBuf {
     let exe = std::env::current_exe().expect("exe path");
     let dir = exe.parent().expect("exe dir");
-    let path = dir.join("yt-dlp-aarch64-apple-darwin");
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    let name = "yt-dlp-aarch64-apple-darwin";
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    let name = "yt-dlp-x86_64-apple-darwin";
+    #[cfg(target_os = "windows")]
+    let name = "yt-dlp-x86_64-pc-windows-msvc.exe";
+    let path = dir.join(name);
     println!("[sidecar] 경로: {:?} (존재: {})", path, path.exists());
     path
 }
@@ -317,9 +328,14 @@ async fn check_yt_dlp_update(current: String) -> Result<UpdateInfo, String> {
 
 #[tauri::command]
 async fn update_yt_dlp(app: tauri::AppHandle, latest_version: String) -> Result<(), String> {
+    #[cfg(not(target_os = "windows"))]
+    let asset = "yt-dlp_macos";
+    #[cfg(target_os = "windows")]
+    let asset = "yt-dlp.exe";
+
     let url = format!(
-        "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_macos",
-        latest_version
+        "https://github.com/yt-dlp/yt-dlp/releases/download/{}/{}",
+        latest_version, asset
     );
     let dest = sidecar_path();
     let tmp = dest.with_extension("tmp");
@@ -340,16 +356,19 @@ async fn update_yt_dlp(app: tauri::AppHandle, latest_version: String) -> Result<
         return Err("다운로드 실패".to_string());
     }
 
-    // 실행 권한 부여 및 교체
-    let tmp_clone2 = tmp.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        std::process::Command::new("chmod")
-            .args(["+x", tmp_clone2.to_str().unwrap()])
-            .status()
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
+    // 실행 권한 부여 (Unix 전용)
+    #[cfg(not(target_os = "windows"))]
+    {
+        let tmp_clone2 = tmp.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            std::process::Command::new("chmod")
+                .args(["+x", tmp_clone2.to_str().unwrap()])
+                .status()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    }
 
     std::fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
 
